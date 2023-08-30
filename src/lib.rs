@@ -1,3 +1,5 @@
+#![feature(get_mut_unchecked)]
+
 pub mod lockfree_queue;
 pub mod lockfree_value;
 
