@@ -81,7 +81,7 @@ impl<T, const SIZE: usize> LockFreeValue<T, SIZE>
 
     /// 设置下一个索引
     #[inline]
-    pub fn set_next_idx(&self, next_idx: usize) {
+    pub fn set_next_idx(&mut self, next_idx: usize) {
         self.set_idx.store(next_idx, Ordering::Release);
     }
 
@@ -99,7 +99,7 @@ impl<T, const SIZE: usize> LockFreeValue<T, SIZE>
 
     /// 将获取值的索引更新到最新值的索引
     #[inline]
-    pub fn update(&self) -> usize {
+    pub fn update(&mut self) -> usize {
         self.get_idx.store(self.set_idx.load(Ordering::Acquire), Ordering::Release);
         return self.get_idx.load(Ordering::Acquire);
     }
@@ -136,7 +136,7 @@ impl<T, const SIZE: usize> LockFreeValue<T, SIZE>
 
     /// 清除整个缓冲区
     #[inline]
-    pub fn clear(&self) {
+    pub fn clear(&mut self) {
         self.set_idx.store(0, Ordering::Release);
         self.get_idx.store(0, Ordering::Release);
     }
@@ -244,7 +244,9 @@ impl<T, const SIZE: usize> ValueWriter<T, SIZE> {
     /// 设置下一个索引，这里使用 mut 限制，如果不限制 意味着 如果被Arc包裹，那么会有多个所有者修改数据，这是不安全的
     #[inline]
     pub fn set_next_idx(&mut self, next_idx: usize) {
-        self.inner.set_next_idx(next_idx)
+        unsafe {
+            Arc::get_mut_unchecked(&mut self.inner).set_next_idx(next_idx)
+        }
     }
 
     /// 最新值是否已经发生变化
@@ -276,7 +278,9 @@ impl<T, const SIZE: usize> ValueWriter<T, SIZE> {
     /// 清除整个缓冲区 这里使用 mut 限制，如果不限制 意味着 如果被Arc包裹，那么会有多个所有者修改数据，这是不安全的
     #[inline]
     pub fn clear(&mut self) {
-        self.inner.clear()
+        unsafe {
+            Arc::get_mut_unchecked(&mut self.inner).clear()
+        }
     }
 }
 
