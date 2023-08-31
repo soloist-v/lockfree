@@ -275,14 +275,14 @@ impl<T, const S: usize> IndexMut<usize> for ValueWriter<T, S> {
     }
 }
 
-pub fn make_value<T: Default, const SIZE: usize>() -> (ValueReader<T, SIZE>, ValueWriter<T, SIZE>)
+pub fn make_value<T: Default, const SIZE: usize>() -> (ValueWriter<T, SIZE>, ValueReader<T, SIZE>, )
 {
     let ring = Arc::new(LockFreeValue::new());
-    let reader = ValueReader {
+    let writer = ValueWriter {
         inner: ring.clone(),
     };
-    let writer = ValueWriter {
+    let reader = ValueReader {
         inner: ring,
     };
-    (reader, writer)
+    (writer, reader)
 }

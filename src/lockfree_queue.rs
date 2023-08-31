@@ -107,11 +107,11 @@ impl<T, const SIZE: usize> RingBuffer<T, SIZE> {
 /// 由于Writer没事实现Clone，所以Writer不能共享所有权
 /// 因此，就实现了 单生产者-单消费者 模式
 
-pub struct RingBufferReader<T, const SIZE: usize> {
+pub struct RingBufferSender<T, const SIZE: usize> {
     inner: Arc<RingBuffer<T, SIZE>>,
 }
 
-impl<T, const SIZE: usize> RingBufferReader<T, SIZE> {
+impl<T, const SIZE: usize> RingBufferSender<T, SIZE> {
     #[inline]
     fn is_full(&self) -> bool {
         self.inner.is_full()
@@ -133,11 +133,11 @@ impl<T, const SIZE: usize> RingBufferReader<T, SIZE> {
     }
 }
 
-pub struct RingBufferWriter<T, const SIZE: usize> {
+pub struct RingBufferReceiver<T, const SIZE: usize> {
     inner: Arc<RingBuffer<T, SIZE>>,
 }
 
-impl<T, const SIZE: usize> RingBufferWriter<T, SIZE> {
+impl<T, const SIZE: usize> RingBufferReceiver<T, SIZE> {
     #[inline]
     fn is_full(&self) -> bool {
         self.inner.is_full()
@@ -159,14 +159,14 @@ impl<T, const SIZE: usize> RingBufferWriter<T, SIZE> {
     }
 }
 
-pub fn ringbuffer<T: Default, const SIZE: usize>() -> (RingBufferReader<T, SIZE>, RingBufferWriter<T, SIZE>)
+pub fn ringbuffer<T: Default, const SIZE: usize>() -> (RingBufferSender<T, SIZE>, RingBufferReceiver<T, SIZE>)
 {
     let ring = Arc::new(RingBuffer::new());
-    let reader = RingBufferReader {
+    let sender = RingBufferSender {
         inner: ring.clone(),
     };
-    let writer = RingBufferWriter {
+    let receiver = RingBufferReceiver {
         inner: ring,
     };
-    (reader, writer)
+    (sender, receiver)
 }
