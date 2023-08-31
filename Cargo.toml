@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 arcell = { path = "../arcell" }
+
+crossbeam-utils = "0.8.16"

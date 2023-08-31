@@ -1,30 +1,48 @@
-use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use crossbeam_utils::CachePadded;
 
 #[derive(Debug)]
 pub struct LockFreeValue<T, const ITEM_SIZE: usize> {
-    data: [Option<T>; ITEM_SIZE],
-    set_idx: CachePadded<AtomicUsize>,
-    get_idx: CachePadded<AtomicUsize>,
+    data: [T; ITEM_SIZE],
+    set_idx: AtomicUsize,
+    get_idx: AtomicUsize,
 }
 
 impl<T, const SIZE: usize> LockFreeValue<T, SIZE>
+    where
+        T: Default,
 {
     #[inline]
     pub fn new() -> Self {
-        Self {
-            data: [(); SIZE].map(|_| None),
-            set_idx: CachePadded::new(AtomicUsize::new(0)),
-            get_idx: CachePadded::new(AtomicUsize::new(0)),
+        LockFreeValue::<T, SIZE> {
+            data: [(); SIZE].map(|_| T::default()),
+            set_idx: AtomicUsize::new(0),
+            get_idx: AtomicUsize::new(0),
         }
     }
 }
 
 impl<T, const SIZE: usize> LockFreeValue<T, SIZE>
 {
+    #[inline]
+    pub fn new_with_init<F>(init: F) -> Self
+        where
+            F: FnMut(usize) -> T,
+    {
+        let mut init = init;
+        let mut i = 0_usize;
+        LockFreeValue::<T, SIZE> {
+            data: [(); SIZE].map(|_| {
+                let t = init(i);
+                i += 1;
+                t
+            }),
+            set_idx: AtomicUsize::new(0),
+            get_idx: AtomicUsize::new(0),
+        }
+    }
+
     /// 缓冲区大小
     #[inline]
     pub fn size(&self) -> usize {
@@ -49,17 +67,16 @@ impl<T, const SIZE: usize> LockFreeValue<T, SIZE>
 
     /// 放入最新值
     #[inline]
-    pub fn push(&mut self, value: T) -> Option<T> {
+    pub fn push(&mut self, value: T) {
         let next = self.next_idx_safe();
-        let old = self.set_value(next, value);
+        self.data[next] = value;
         self.set_idx.store(next, Ordering::Release);
-        old
     }
 
     /// 设置缓冲区数据
     #[inline]
-    pub fn set_value(&mut self, idx: usize, value: T) -> Option<T> {
-        self.data[idx].replace(value)
+    pub fn set_value(&mut self, idx: usize, value: T) {
+        self.data[idx] = value;
     }
 
     /// 设置下一个索引
@@ -89,22 +106,31 @@ impl<T, const SIZE: usize> LockFreeValue<T, SIZE>
 
     /// 获取最新的数据
     #[inline]
-    pub fn get_last(&mut self) -> Option<T> {
+    pub fn get_last(&self) -> &T {
         let set_idx = self.set_idx.load(Ordering::Acquire);
         self.get_idx.store(set_idx, Ordering::Release);
-        self.data[set_idx].take()
+        return &self.data[set_idx];
+    }
+
+    /// 获取最新值，如果未更新返回None
+    #[inline]
+    pub fn get_next(&self) -> Option<&T> {
+        if self.unchanged() {
+            return None;
+        }
+        return Some(self.get_last());
     }
 
     /// 获取缓冲区数据
     #[inline]
-    pub fn at(&self, idx: usize) -> &Option<T> {
+    pub fn at(&self, idx: usize) -> &T {
         &self.data[idx]
     }
 
 
     /// 获取缓冲区数据可变
     #[inline]
-    pub fn at_mut(&mut self, idx: usize) -> &mut Option<T> {
+    pub fn at_mut(&mut self, idx: usize) -> &mut T {
         &mut self.data[idx]
     }
 
@@ -113,14 +139,11 @@ impl<T, const SIZE: usize> LockFreeValue<T, SIZE>
     pub fn clear(&mut self) {
         self.set_idx.store(0, Ordering::Release);
         self.get_idx.store(0, Ordering::Release);
-        for i in self.data.iter_mut() {
-            let _ = i.take();
-        }
     }
 }
 
 impl<T, const S: usize> Index<usize> for LockFreeValue<T, S> {
-    type Output = Option<T>;
+    type Output = T;
     #[inline]
     fn index(&self, index: usize) -> &Self::Output {
         &self.data[index]
@@ -158,21 +181,24 @@ impl<T, const SIZE: usize> ValueReader<T, SIZE> {
     }
 
     #[inline]
-    pub fn get_last(&mut self) -> Option<T> {
-        unsafe {
-            Arc::get_mut_unchecked(&mut self.inner).get_last()
-        }
+    pub fn get_last(&self) -> &T {
+        self.inner.get_last()
     }
 
     #[inline]
-    pub fn at(&self, idx: usize) -> &Option<T> {
+    pub fn get_next(&self) -> Option<&T> {
+        self.inner.get_next()
+    }
+
+    #[inline]
+    pub fn at(&self, idx: usize) -> &T {
         self.inner.at(idx)
     }
 }
 
 impl<T, const SIZE: usize> Index<usize> for ValueReader<T, SIZE> {
-    type Output = Option<T>;
-    #[inline]
+    type Output = T;
+
     fn index(&self, index: usize) -> &Self::Output {
         &self.inner[index]
     }
@@ -201,7 +227,7 @@ impl<T, const SIZE: usize> ValueWriter<T, SIZE> {
 
     /// 放入最新值
     #[inline]
-    pub fn push(&mut self, value: T) -> Option<T> {
+    pub fn push(&mut self, value: T) {
         unsafe {
             Arc::get_mut_unchecked(&mut self.inner).push(value)
         }
@@ -209,7 +235,7 @@ impl<T, const SIZE: usize> ValueWriter<T, SIZE> {
 
     /// 设置缓冲区数据
     #[inline]
-    pub fn set_value(&mut self, idx: usize, value: T) -> Option<T> {
+    pub fn set_value(&mut self, idx: usize, value: T) {
         unsafe {
             Arc::get_mut_unchecked(&mut self.inner).set_value(idx, value)
         }
@@ -237,13 +263,13 @@ impl<T, const SIZE: usize> ValueWriter<T, SIZE> {
 
     /// 获取缓冲区数据
     #[inline]
-    pub fn at(&self, idx: usize) -> &Option<T> {
+    pub fn at(&self, idx: usize) -> &T {
         self.inner.at(idx)
     }
 
     /// 获取缓冲区数据可变
     #[inline]
-    pub fn at_mut(&mut self, idx: usize) -> &mut Option<T> {
+    pub fn at_mut(&mut self, idx: usize) -> &mut T {
         unsafe {
             Arc::get_mut_unchecked(&mut self.inner).at_mut(idx)
         }
@@ -259,7 +285,7 @@ impl<T, const SIZE: usize> ValueWriter<T, SIZE> {
 }
 
 impl<T, const SIZE: usize> Index<usize> for ValueWriter<T, SIZE> {
-    type Output = Option<T>;
+    type Output = T;
 
     fn index(&self, index: usize) -> &Self::Output {
         &self.inner[index]
@@ -278,6 +304,19 @@ impl<T, const S: usize> IndexMut<usize> for ValueWriter<T, S> {
 pub fn make_value<T: Default, const SIZE: usize>() -> (ValueReader<T, SIZE>, ValueWriter<T, SIZE>)
 {
     let ring = Arc::new(LockFreeValue::new());
+    let reader = ValueReader {
+        inner: ring.clone(),
+    };
+    let writer = ValueWriter {
+        inner: ring,
+    };
+    (reader, writer)
+}
+
+pub fn make_value_init<T: Default, const SIZE: usize>(
+    init: impl FnMut(usize) -> T) -> (ValueReader<T, SIZE>, ValueWriter<T, SIZE>)
+{
+    let ring = Arc::new(LockFreeValue::new_with_init(init));
     let reader = ValueReader {
         inner: ring.clone(),
     };
