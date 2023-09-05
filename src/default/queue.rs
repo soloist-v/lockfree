@@ -3,6 +3,7 @@ use std::mem::MaybeUninit;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use crossbeam_utils::CachePadded;
+use super::error::Error;
 
 /// 这里其实不需要限制RingBuffer，因为RingBuffer的实现都是符合借用规则的
 /// 所以不必担心安全问题，默认情况下只会有一个线程持有对象，因为没有提供Clone方法，即便用Arc指针
@@ -12,27 +13,20 @@ use crossbeam_utils::CachePadded;
 /// 所以在下面的读写分离实现中，使用了Arc实现内部可变。
 #[derive(Debug)]
 pub struct RingBuffer<T, const SIZE: usize = 4> {
-    m_data: [Option<T>; SIZE],
+    m_data: [T; SIZE],
     idx_head: CachePadded<AtomicUsize>,
     idx_tail: CachePadded<AtomicUsize>,
 }
 
-impl<T, const SIZE: usize> RingBuffer<T, SIZE> {
+impl<T: Default, const SIZE: usize> RingBuffer<T, SIZE> {
     #[inline]
     fn new() -> Self {
         RingBuffer::<T, SIZE> {
             idx_head: CachePadded::new(AtomicUsize::new(0)),
             idx_tail: CachePadded::new(AtomicUsize::new(0)),
-            m_data: [(); SIZE].map(|_| None),
+            m_data: [(); SIZE].map(|_| Default::default()),
         }
     }
-}
-
-#[derive(Debug)]
-pub enum Error {
-    Empty,
-    Full,
-    InterDisordered,
 }
 
 impl std::fmt::Display for Error {
@@ -44,7 +38,7 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 
-impl<T, const SIZE: usize> RingBuffer<T, SIZE> {
+impl<T: Default, const SIZE: usize> RingBuffer<T, SIZE> {
     #[inline]
     fn next_idx(cur: usize) -> usize {
         (cur + 1) & (SIZE - 1)
@@ -62,7 +56,7 @@ impl<T, const SIZE: usize> RingBuffer<T, SIZE> {
         if next_head == tail {
             return Err(Error::Full);
         }
-        self.m_data[head].replace(value);
+        self.m_data[head] = value;
         self.idx_head.store(next_head, Ordering::Release);
         Ok(())
     }
@@ -73,16 +67,9 @@ impl<T, const SIZE: usize> RingBuffer<T, SIZE> {
         if head == tail {
             return Err(Error::Empty);
         }
-        let res = self.m_data[tail].take();
+        let res = std::mem::replace(&mut self.m_data[tail], T::default());
         self.idx_tail.store(Self::next_idx(tail), Ordering::Release);
-        match res {
-            None => {
-                Err(Error::InterDisordered)
-            }
-            Some(a) => {
-                Ok(a)
-            }
-        }
+        Ok(res)
     }
 
     #[inline]
@@ -114,7 +101,7 @@ pub struct RingBufferSender<T, const SIZE: usize> {
     inner: Arc<RingBuffer<T, SIZE>>,
 }
 
-impl<T, const SIZE: usize> RingBufferSender<T, SIZE> {
+impl<T: Default, const SIZE: usize> RingBufferSender<T, SIZE> {
     #[inline]
     fn is_full(&self) -> bool {
         self.inner.is_full()
@@ -140,7 +127,7 @@ pub struct RingBufferReceiver<T, const SIZE: usize> {
     inner: Arc<RingBuffer<T, SIZE>>,
 }
 
-impl<T, const SIZE: usize> RingBufferReceiver<T, SIZE> {
+impl<T: Default, const SIZE: usize> RingBufferReceiver<T, SIZE> {
     #[inline]
     fn is_full(&self) -> bool {
         self.inner.is_full()
