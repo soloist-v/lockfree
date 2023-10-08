@@ -1,4 +1,3 @@
-use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -102,6 +101,34 @@ impl<T: Default, const SIZE: usize> LockFreeValue<T, SIZE>
         Ok(t)
     }
 
+    /// 获取最新的数据
+    #[inline]
+    pub fn get_last_ref(&mut self) -> Result<&T, Error> {
+        let set_idx = self.set_idx.load(Ordering::Acquire);
+        let get_idx = self.get_idx.load(Ordering::Acquire);
+        if set_idx == get_idx {
+            return Err(Error::Empty);
+        }
+        // 这里注意必须先占坑，这样写入线程就会跳过坑
+        self.get_idx.store(set_idx, Ordering::Release);
+        let t = &self.data[set_idx];
+        Ok(t)
+    }
+
+    /// 获取最新的数据
+    #[inline]
+    pub fn get_last_mut(&mut self) -> Result<&mut T, Error> {
+        let set_idx = self.set_idx.load(Ordering::Acquire);
+        let get_idx = self.get_idx.load(Ordering::Acquire);
+        if set_idx == get_idx {
+            return Err(Error::Empty);
+        }
+        // 这里注意必须先占坑，这样写入线程就会跳过坑
+        self.get_idx.store(set_idx, Ordering::Release);
+        let t = &mut self.data[set_idx];
+        Ok(t)
+    }
+
     /// 获取缓冲区数据
     #[inline]
     pub fn at(&self, idx: usize) -> &T {
@@ -162,9 +189,28 @@ impl<T: Default, const SIZE: usize> ValueReader<T, SIZE> {
     }
 
     #[inline]
+    pub fn last_idx(&self) -> usize {
+        self.inner.set_idx.load(Ordering::Acquire)
+    }
+
+    #[inline]
     pub fn get_last(&mut self) -> Result<T, Error> {
         unsafe {
             Arc::get_mut_unchecked(&mut self.inner).get_last()
+        }
+    }
+
+    #[inline]
+    pub fn get_last_ref(&mut self) -> Result<&T, Error> {
+        unsafe {
+            Arc::get_mut_unchecked(&mut self.inner).get_last_ref()
+        }
+    }
+
+    #[inline]
+    pub fn get_last_mut(&mut self) -> Result<&mut T, Error> {
+        unsafe {
+            Arc::get_mut_unchecked(&mut self.inner).get_last_mut()
         }
     }
 
