@@ -163,7 +163,7 @@ impl<T, const SIZE: usize> RingBufferReceiver<T, SIZE> {
     }
 }
 
-pub fn ringbuffer<T: Default, const SIZE: usize>() -> (RingBufferSender<T, SIZE>, RingBufferReceiver<T, SIZE>)
+pub fn ringbuffer<T, const SIZE: usize>() -> (RingBufferSender<T, SIZE>, RingBufferReceiver<T, SIZE>)
 {
     let ring = Arc::new(RingBuffer::new());
     let sender = RingBufferSender {
