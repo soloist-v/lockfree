@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::fmt::Formatter;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};

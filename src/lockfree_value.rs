@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::ops::{Index, IndexMut};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -274,7 +276,7 @@ impl<T, const S: usize> IndexMut<usize> for ValueWriter<T, S> {
     }
 }
 
-pub fn make_value<T: Default, const SIZE: usize>() -> (ValueWriter<T, SIZE>, ValueReader<T, SIZE>, )
+pub fn make_value<T, const SIZE: usize>() -> (ValueWriter<T, SIZE>, ValueReader<T, SIZE>, )
 {
     let ring = Arc::new(LockFreeValue::new());
     let writer = ValueWriter {
