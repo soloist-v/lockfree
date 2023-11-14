@@ -1,5 +1,6 @@
+#![allow(dead_code)]
+
 use std::fmt::Formatter;
-use std::mem::MaybeUninit;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use crossbeam_utils::CachePadded;

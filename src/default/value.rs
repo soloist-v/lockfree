@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::ops::{Index, IndexMut};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
